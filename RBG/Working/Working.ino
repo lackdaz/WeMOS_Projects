@@ -27,7 +27,7 @@
 #define S4 D8
 
 /* Infra-red Sensor */
-#define IR_PIN D0 // IR signal pin
+#define IR_PIN D5 // IR signal pin
 
 IRrecv irrecv(IR_PIN);
 decode_results results;
@@ -38,7 +38,7 @@ unsigned long StoredCode = 0;
 //int SPDTState = 0;         // variable for reading the pushbutton status
 //int progState = 0;         // variable for reading the pushbutton status
 
-byte rangeNum = 0;
+const int rangeNum = 2;
 byte pressNum = 0;
 
 int progState = 1;         //set default buttonstate to off
@@ -49,9 +49,11 @@ int overrideState = 0;      //override state set to off
 bool overrideButtonState = false;
 bool prevOverrideState = true;
 
-byte limit[2] = {S1, S2};
-byte motor[2] = {M1, M2};
-byte IRcode[2];
+byte limit[rangeNum] = {S1, S2};
+byte motor[rangeNum] = {M1, M2};
+bool active[rangeNum] = {M1, M2};
+
+unsigned long IRcode[3];
 
 bool range_check(byte x){
   int SPDTState = digitalRead(limit[x]);
@@ -79,6 +81,13 @@ bool range_check(byte x){
 }
 
 void range_reset(byte x){
+
+if (active[x] == false) {
+  Serial.print("Error: Range");
+  Serial.print(x+1);
+  Serial.println(" is offline!");
+  return;
+}
 
 int SPDTState = digitalRead(limit[x]);
 
@@ -122,6 +131,7 @@ void blinkX(byte &x) {
 bool checkOverrideButton() {
 //  Serial.println(digitalRead(S4));
   if (digitalRead(S4)){
+    prevOverrideState = false;
     return true;
   }
   else {
@@ -135,6 +145,80 @@ bool checkProgButton() {
     return true;
   }
   else return false;
+}
+
+void programmingMode() {
+  digitalWrite(LED_BUILTIN, LOW);
+  bool ledState = digitalRead(LED_BUILTIN);
+  byte progNum = 0;
+  while (ledState == LOW) {
+    Serial.println("Release the button");
+    while (checkOverrideButton()){
+      delay(10);
+    }
+    Serial.println("Please click range #");
+    while (!checkOverrideButton()){
+      delay(10);
+    }
+    if (checkOverrideButton()){
+      unsigned long start = millis();
+      unsigned long elapsed = 0;
+      while (elapsed < 1000) {
+        elapsed = millis() - start;
+        delay(10);
+        if (!checkOverrideButton() && (!prevOverrideState)) {
+          progNum++;
+          prevOverrideState = true;
+        }
+      }
+      Serial.print("Programming Range # ");
+      Serial.println(progNum);
+      if (!progNum) {
+        Serial.println("Error! Please Try Again");
+        break;
+      }
+      byte index = progNum - 1;
+      if (!active[index]) {
+        Serial.println("Error! Inactive range cannot be programmed");
+
+        break;
+      }
+      bool listenSuccess = false;
+      listenSuccess = listenIR(index);
+      digitalWrite(LED_BUILTIN, HIGH);
+      pressNum = 0;
+      elapsed = 0;
+      ledState = digitalRead(LED_BUILTIN);
+    }
+  }
+  return;
+}
+
+bool listenIR(byte rangeProgNum) {
+  unsigned long start = millis();
+  unsigned long elapsed = 0;
+  while (!irrecv.decode(&results) && elapsed < 10000) {
+    irrecv.resume();
+    delay(100);
+    if (irrecv.decode(&results)) {
+      Serial.print("Signal detected!");
+      Serial.println(results.value);
+      CurrentValue = (results.value);
+
+      // if the record mode is activated store the current value as the programed value
+      Serial.print("Saving to");
+      Serial.println(rangeProgNum);
+      IRcode[rangeProgNum] = CurrentValue; // temporary
+      Serial.println(IRcode[rangeProgNum]);  //displays stored code for reference
+      delay(1000);
+      irrecv.resume();
+      return true;
+    }
+    elapsed = millis() - start;
+    Serial.println(elapsed);
+  }
+  Serial.println("No IR input detected");
+  return false;
 }
 
 /* SETUP */
@@ -153,24 +237,19 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);  // Initialize the Motor Pin 1 as an output
 
 // Start the receiver
-//  irrecv.enableIRIn();
+  irrecv.enableIRIn();
 
 // due to the reverse logic of the Wemos LED, this turns it off
   digitalWrite(LED_BUILTIN, HIGH);
   digitalWrite(M1, LOW);
   digitalWrite(M2, LOW);
 
-  for (byte i = 0; i < 2; i++) {
-  //  range_reset(i);
+  for (byte i = 0; i < rangeNum; i++) {
     if (range_check(i)){
-      rangeNum++;
+      active[i] = true;
     }
+    else active[i] = false;
   }
-
-  Serial.print("No. of ranges: ");
-  Serial.println(rangeNum);
-
-  blinkX(rangeNum);
 
   // to shut all motors
   digitalWrite(M1, LOW);
@@ -178,6 +257,21 @@ void setup() {
   //digitalWrite(M3, LOW);
 
   Serial.println("Setup completed");
+  byte temp = 0;
+  for (byte i = 0; i < rangeNum; i++) {
+    if (active[i]){
+      Serial.print("Range #");
+      Serial.print(i);
+      Serial.println(": ONLINE");
+      temp++;
+    }
+    else {
+      Serial.print("Range #");
+      Serial.print(i);
+      Serial.println(": OFFLINE");
+    }
+  }
+  blinkX(temp);
 }
 
 
@@ -193,55 +287,67 @@ else progState = false;
 // read the state of override button
 if (checkOverrideButton()){
   unsigned long start = millis();
-  int elapsed;
-  while (elapsed < 2000) {
-    if (!checkOverrideButton() && (prevOverrideState)) {
+  unsigned long elapsed = 0;
+  while (elapsed < 1000) {
+    elapsed = millis() - start;
+    delay(10);
+//    Serial.print("Time Elapsed: ");
+//    Serial.println(elapsed);
+    if (!checkOverrideButton() && (!prevOverrideState)) {
       // if button was previously pressed, and just released
       pressNum++;
-      prevOverrideState = false;
-      elapsed -= 200;
+      prevOverrideState = true;
     }
-    delay(50);
-    elapsed = millis() - start;
-    Serial.print("Time Elapsed: ");
-    Serial.println(elapsed);
+
   }
-  Serial.print("Press #");
-  Serial.println(pressNum);
+//  Serial.print("Press #");
+//  Serial.println(pressNum);
+  if (pressNum == 0) {
+    Serial.println("You are now in programming mode");
+    programmingMode();
+    return;
+  }
+  else {
+    range_reset(pressNum-1);
+  }
   pressNum = 0;
 }
 else {
   ;
 }
 
-//overrideState = digitalRead(S4);
-//Serial.println("Override State: ");
-//Serial.println(overrideState);
-//
-//// if a signal is detected, store the value
-//if (irrecv.decode(&results)) {
-//  Serial.print("Signal detected!");
-//  Serial.println(results.value);
-//  //delay(100);
-//  CurrentValue = (results.value);
-//
-//   // if the recieved value equals the programed value, then toggle the output state
-//
-//  for (byte i = 0; i < 2; i++) {
-//    if (IRcode[i] == CurrentValue) {
-//      range_reset(i);
-//      break;
-//    }
-//  }
-//   // if the record mode is activated store the current value as the programed value
-//  if (RecordState == 1) {
-//    IRcode[0] = CurrentValue; // temporary
-//    RecordState = 0;
-//    digitalWrite(LED_BUILTIN, HIGH);  // turn off the LED once the frequency is recorded
-//    Serial.println(StoredCode);  //displays stored code for reference
-//   }
-//}
-//
+// if a signal is detected, store the value
+if (irrecv.decode(&results)) {
+  Serial.print("Signal detected!");
+  Serial.println(results.value);
+  CurrentValue = (results.value);
+
+   // if the recieved value equals the programed value, then toggle the selected range
+  for (byte i = 0; i < rangeNum ; i++) {
+    if (active[i] == false) {
+      continue;
+    }
+    Serial.print("Range #");
+    Serial.print(i);
+    Serial.print(":");
+    if (IRcode[i] == CurrentValue) {
+      Serial.print(IRcode[i]);
+      Serial.println("(MATCHED)");
+      range_reset(i);
+      break;
+    }
+    Serial.println(IRcode[i]);
+  }
+}
+
+// Receive the next value
+irrecv.resume();
+delay(100);
+}
+
+
+
+
 //if (progState == LOW){
 //  Serial.println("Button Pressed!");
 //
@@ -260,23 +366,3 @@ else {
 //    digitalWrite(LED_BUILTIN, LOW);
 //    RecordState = 1;
 //}
-//
-//if (overrideState == HIGH){
-//  Serial.println();
-//  while (overrideState == HIGH) {
-//    overrideState = digitalRead(S4);
-//    delay(50);
-//  }
-//  for (byte i = 0; i < 2; i++) {
-//      range_reset(i);
-//        Serial.println(i);
-//  }
-//  delay(50);
-//    Serial.println("3");
-//  overrideState = LOW;
-//}
-
-// Receive the next value
-//irrecv.resume();
-delay(100);
-}
