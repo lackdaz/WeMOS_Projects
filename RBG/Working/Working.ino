@@ -113,7 +113,7 @@ int SPDTState = digitalRead(limit[x]);
       //outputState = 0;
       //Serial.print("outputState=");
       //Serial.println(outputState);
-      delay(1000);
+      delay(50);
       Serial.print("Range ");
       Serial.print(x+1);
       Serial.println(" Completed!");
@@ -199,7 +199,7 @@ bool listenIR(byte rangeProgNum) {
   unsigned long elapsed = 0;
   while (!irrecv.decode(&results) && elapsed < 10000) {
     irrecv.resume();
-    delay(100);
+    delay(300);
     if (irrecv.decode(&results)) {
       Serial.print("Signal detected!");
       Serial.println(results.value);
@@ -215,7 +215,7 @@ bool listenIR(byte rangeProgNum) {
       return true;
     }
     elapsed = millis() - start;
-    Serial.println(elapsed);
+//    Serial.println(elapsed);
   }
   Serial.println("No IR input detected");
   return false;
@@ -338,11 +338,10 @@ if (irrecv.decode(&results)) {
     }
     Serial.println(IRcode[i]);
   }
+  irrecv.resume();
+  delay(300);
 }
-
-// Receive the next value
-irrecv.resume();
-delay(100);
+delay(50);
 }
 
 
