@@ -39,11 +39,15 @@ unsigned long StoredCode = 0;
 //int progState = 0;         // variable for reading the pushbutton status
 
 byte rangeNum = 0;
+byte pressNum = 0;
 
 int progState = 1;         //set default buttonstate to off
 int RecordState = 0;         //is the reciever in record mode
 int outputState = 1;         //is the output on or off
 int overrideState = 0;      //override state set to off
+
+bool overrideButtonState = false;
+bool prevOverrideState = true;
 
 byte limit[2] = {S1, S2};
 byte motor[2] = {M1, M2};
@@ -61,7 +65,7 @@ bool range_check(byte x){
     delay(50);
     int elapsed = millis() - start;
     Serial.println(elapsed);
-    if (elapsed > 10000) {
+    if (elapsed > 5000) {
       return false;
     }
   }
@@ -115,12 +119,22 @@ void blinkX(byte &x) {
   }
 }
 
-bool checkProgButton() {
-  Serial.println(analogRead(S0));
-  if (analogRead(S0) < 500){
-    progState = true;
+bool checkOverrideButton() {
+//  Serial.println(digitalRead(S4));
+  if (digitalRead(S4)){
+    return true;
   }
-  else progState = false;
+  else {
+    return false;
+  }
+}
+
+bool checkProgButton() {
+//  Serial.println(analogRead(S0));
+  if (analogRead(S0) < 500){
+    return true;
+  }
+  else return false;
 }
 
 /* SETUP */
@@ -171,10 +185,34 @@ void setup() {
 void loop() {
 
 // read the state of programming button
-checkProgButton();
+if (checkProgButton()){
+  progState = true;
+}
+else progState = false;
 
 // read the state of override button
-checkOverrideButton();
+if (checkOverrideButton()){
+  unsigned long start = millis();
+  int elapsed;
+  while (elapsed < 2000) {
+    if (!checkOverrideButton() && (prevOverrideState)) {
+      // if button was previously pressed, and just released
+      pressNum++;
+      prevOverrideState = false;
+      elapsed -= 200;
+    }
+    delay(50);
+    elapsed = millis() - start;
+    Serial.print("Time Elapsed: ");
+    Serial.println(elapsed);
+  }
+  Serial.print("Press #");
+  Serial.println(pressNum);
+  pressNum = 0;
+}
+else {
+  ;
+}
 
 //overrideState = digitalRead(S4);
 //Serial.println("Override State: ");
